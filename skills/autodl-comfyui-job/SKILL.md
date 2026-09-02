@@ -13,8 +13,9 @@ Use the `autodl-comfyui` MCP tools. Do not guess request bodies. Do not invent A
 - `get_workflow` — load `ComfyUiWorkflow` (`uuid`, `name`, `input_rules`, `input_example`)
 - `submit_job` — POST `inputs` as the JSON body; returns `ComfyUiJob` with `task_id` and `status`
 - `get_job` — read `ComfyUiJob` (`status`, `duration`, `results`)
+- `wait_job` — poll until SUCCESS/FAILED or timeout; returns ComfyUiJob plus `polls`, `waited_ms`, `timed_out`
 
-There is no blocking wait tool. Jobs can take many minutes; poll `get_job` yourself.
+Jobs can take many minutes. After submit_job, call wait_job (re-call if timed_out is true). Do not sleep between get_job calls.
 
 ## Discover then submit
 
@@ -22,8 +23,8 @@ There is no blocking wait tool. Jobs can take many minutes; poll `get_job` yours
 2. Call `get_workflow` with that `uuid` (as `workflow_id`).
 3. Copy `input_rules` keys into `inputs`. Never invent body keys. Never add extra fields.
 4. Call `submit_job` with `{ workflow_id, inputs }`. The server POSTs `inputs` as-is (not wrapped).
-5. Poll `get_job` with the returned `task_id` about every 4 seconds until `status` is `SUCCESS` or `FAILED`.
-6. On `SUCCESS`, download each `results[].url` immediately. URLs have a short TTL. Retry a failed download once.
+5. Call `wait_job` with the returned `task_id`. If `timed_out` is true and status is still `QUEUED` or `RUNNING`, call `wait_job` again immediately (do not sleep first). Tell the user when status first becomes `RUNNING` or when a wait chunk times out still running.
+6. On `SUCCESS`, tell the user immediately, then download each `results[].url`. URLs have a short TTL. Retry a failed download once. Do not wait to finish the download before saying SUCCESS.
 
 `status` is `QUEUED` | `RUNNING` | `SUCCESS` | `FAILED`. Treat API `completed` as success only if the tool already mapped it to `SUCCESS`.
 

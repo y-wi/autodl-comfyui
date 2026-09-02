@@ -8,10 +8,15 @@
 import { Buffer } from "node:buffer";
 
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "autodl-comfyui", version: "0.1.0" };
+const SERVER_INFO = { name: "autodl-comfyui", version: "0.1.1" };
 const BASE = "https://autodl.art";
 const HTTP_TIMEOUT_MS = 60_000;
 const MAX_ERROR_BODY = 12_000;
+const WAIT_DEFAULT_TIMEOUT_MS = 45_000;
+const WAIT_DEFAULT_INTERVAL_MS = 2_000;
+const WAIT_MAX_TIMEOUT_MS = 55_000;
+
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 function log(...parts) {
   process.stderr.write(parts.map(String).join(" ") + "\n");
@@ -201,7 +206,7 @@ const TOOLS = [
   {
     name: "get_job",
     description:
-      "Read a ComfyUI job by task_id. Returns ComfyUiJob { task_id, status, duration, results, started_at?, created_at? }. status is QUEUED | RUNNING | SUCCESS | FAILED. Poll this tool; do not expect a blocking wait. On SUCCESS, download result URLs immediately (short TTL).",
+      "Snapshot a ComfyUI job by task_id. Returns ComfyUiJob { task_id, status, duration, results, started_at?, created_at? }. status is QUEUED | RUNNING | SUCCESS | FAILED. After submit_job prefer wait_job; use get_job for a single read. On SUCCESS, download result URLs immediately (short TTL).",
     inputSchema: {
       $schema: "http://json-schema.org/draft-07/schema#",
       type: "object",
@@ -212,6 +217,38 @@ const TOOLS = [
           type: "string",
           minLength: 1,
           description: "task_id returned by submit_job",
+        },
+      },
+    },
+  },
+  {
+    name: "wait_job",
+    description:
+      "Poll a ComfyUI job in-process until SUCCESS or FAILED, or until timeout. Default interval 2000ms, default timeout 45000ms (cap 55000 so the MCP host does not kill the call). Returns ComfyUiJob plus polls, waited_ms, timed_out. After submit_job call this instead of sleeping between get_job. If timed_out is true and status is still QUEUED or RUNNING, call wait_job again. On SUCCESS download result URLs immediately (short TTL).",
+    inputSchema: {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      type: "object",
+      additionalProperties: false,
+      required: ["task_id"],
+      properties: {
+        task_id: {
+          type: "string",
+          minLength: 1,
+          description: "task_id returned by submit_job",
+        },
+        timeout_ms: {
+          type: "integer",
+          minimum: 1000,
+          maximum: 55000,
+          default: 45000,
+          description: "Max wait in milliseconds (default 45000, cap 55000).",
+        },
+        interval_ms: {
+          type: "integer",
+          minimum: 500,
+          maximum: 15000,
+          default: 2000,
+          description: "Poll interval in milliseconds (default 2000).",
         },
       },
     },
@@ -385,6 +422,31 @@ async function callGetJob(args) {
   return asJob(payload);
 }
 
+async function callWaitJob(args) {
+  const task_id = args.task_id;
+  if (typeof task_id !== "string" || !task_id.trim()) {
+    throw new ToolError("task_id is required (string)");
+  }
+  const timeoutMs = toPageInt(args.timeout_ms, WAIT_DEFAULT_TIMEOUT_MS, "timeout_ms", 1000, WAIT_MAX_TIMEOUT_MS);
+  const intervalMs = toPageInt(args.interval_ms, WAIT_DEFAULT_INTERVAL_MS, "interval_ms", 500, 15_000);
+  const started = Date.now();
+  let polls = 0;
+  let job;
+  while (true) {
+    job = await callGetJob({ task_id: task_id.trim() });
+    polls += 1;
+    const status = job.status;
+    const elapsed = Date.now() - started;
+    if (status === "SUCCESS" || status === "FAILED") {
+      return { ...job, polls, waited_ms: elapsed, timed_out: false };
+    }
+    if (elapsed + intervalMs >= timeoutMs) {
+      return { ...job, polls, waited_ms: elapsed, timed_out: true };
+    }
+    await sleep(intervalMs);
+  }
+}
+
 async function handleToolsCall(params) {
   if (!process.env.AUTODL_TOKEN) return missingTokenResult();
   const name = params && params.name;
@@ -399,6 +461,7 @@ async function handleToolsCall(params) {
     if (name === "get_workflow") return toolJson(await callGetWorkflow(args));
     if (name === "submit_job") return toolJson(await callSubmitJob(args));
     if (name === "get_job") return toolJson(await callGetJob(args));
+    if (name === "wait_job") return toolJson(await callWaitJob(args));
     return toolResult(`Unknown tool: ${name}`, true);
   } catch (err) {
     if (err instanceof ToolError) {
