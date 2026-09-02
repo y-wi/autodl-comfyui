@@ -18,9 +18,10 @@ skills/autodl-comfyui-job/SKILL.md
 | `list_workflows` | `POST /api/v1/comfyui/workflows` with `{ page_index, page_size }` (defaults 1 / 100, max 100). Pages automatically if `result_total` > `page_size` (cap 20 pages). Returns `{ total, workflows: [{ uuid, name, price_type, usage_count_7d }] }`. |
 | `get_workflow` | `GET /api/v1/comfyui/workflows/{workflow_id}` → `ComfyUiWorkflow` |
 | `submit_job` | `POST /api/v1/comfyui/comfyui_workflow/{workflow_id}` with the `inputs` object as the JSON body → `ComfyUiJob` |
-| `get_job` | `GET /api/v1/comfyui/comfyui_workflow/result/{task_id}` → `ComfyUiJob` |
+| `get_job` | `GET /api/v1/comfyui/comfyui_workflow/result/{task_id}` → one `ComfyUiJob` snapshot |
+| `wait_job` | Same GET, polled in-process every 2s until SUCCESS/FAILED or 45s timeout. Re-call if timed_out. |
 
-Call `list_workflows` when the user wants every workflow or does not know the id. Then `get_workflow(uuid)` for `input_rules`. `inputs` keys **must** come from that workflow’s `input_rules`. The tools do not hardcode MiniMax field names or a static catalog of ids. There is no blocking wait tool; poll `get_job` (jobs can take ~15 minutes). Result URLs expire quickly — download on `SUCCESS`.
+Call `list_workflows` when the user wants every workflow or does not know the id. Then `get_workflow(uuid)` for `input_rules`. `inputs` keys **must** come from that workflow’s `input_rules`. The tools do not hardcode MiniMax field names or a static catalog of ids. After submit_job, call wait_job (re-call on timed_out) instead of sleeping between get_job. Jobs can take ~15 minutes. Result URLs expire quickly — download on SUCCESS.
 
 ## AUTODL_TOKEN
 
