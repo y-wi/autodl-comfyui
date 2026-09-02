@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "autodl-comfyui": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["server.mjs"],
+      "cwd": "${PLUGIN_ROOT}",
+      "env": { "AUTODL_TOKEN": "${AUTODL_TOKEN}" }
+    }
+  }
+}

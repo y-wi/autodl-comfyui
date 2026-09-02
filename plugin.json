@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "autodl-comfyui",
+  "version": "0.1.0",
+  "description": "Submit, poll, and read AutoDL.art ComfyUI workflow jobs. Inputs come from each workflow's input_rules.",
+  "author": { "name": "Yaowei Huang" },
+  "homepage": "https://autodl.art/docs/comfyui_api/",
+  "keywords": ["autodl", "comfyui", "video"]
+}
